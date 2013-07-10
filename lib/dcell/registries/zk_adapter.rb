@@ -1,8 +1,10 @@
 require 'zk'
+require 'dcell/registry'
+require 'dcell/registries/base'
 
 module DCell
   module Registry
-    class ZkAdapter
+    class ZkAdapter < Base
       PREFIX  = "/dcell"
       DEFAULT_PORT = 2181
 
@@ -36,52 +38,32 @@ module DCell
         end
 
         @zk = ZK.new(*servers)
-        @node_registry = Registry.new(@zk, @base_path, :nodes, true)
-        @global_registry = Registry.new(@zk, @base_path, :globals, false)
       end
 
-      class Registry
-        def initialize(zk, base_path, name, ephemeral)
-          @zk = zk
-          @base_path = File.join(base_path, name.to_s)
-          @ephemeral = ephemeral
-          @zk.mkdir_p @base_path
-        end
-
-        def get(key)
-          result, _ = @zk.get("#{@base_path}/#{key}")
-          Marshal.load result
-        rescue ZK::Exceptions::NoNode
-        end
-
-        def set(key, value)
-          path = "#{@base_path}/#{key}"
-          string = Marshal.dump value
-          @zk.set path, string
-        rescue ZK::Exceptions::NoNode
-          @zk.create path, string, :ephemeral => @ephemeral
-        end
-
-        def all
-          @zk.children @base_path
-        end
-
-        def clear
-          @zk.rm_rf @base_path
-          @zk.mkdir_p @base_path
-        end
+      def get(namespace, key)
+        path = File.join(@base_path, namespace.to_s, key)
+        result, _ = @zk.get(path)
+        Marshal.load(result)
+      rescue ZK::Exceptions::NoNode
       end
 
-      def get_node(node_id);       @node_registry.get(node_id) end
-      def set_node(node_id, addr); @node_registry.set(node_id, addr) end
-      def nodes;                   @node_registry.all end
-      def clear_nodes;             @node_registry.clear end
+      def set(namespace, key, value)
+        path = File.join(@base_path, namespace.to_s, key)
+        string = Marshal.dump(value)
+        @zk.set(path, string)
+      rescue ZK::Exceptions::NoNode
+        @zk.create(path, string, ephemeral: (namespace == :nodes))
+      end
 
-      def get_global(key);        @global_registry.get(key) end
-      def set_global(key, value); @global_registry.set(key, value) end
-      def global_keys;            @global_registry.all end
-      def clear_globals;          @global_registry.clear end
+      def keys(namespace)
+        @zk.children(File.join(@base_path, namespace.to_s))
+      end
 
+      def clear(namespace)
+        path = File.join(@base_path, namespace.to_s)
+        @zk.rm_rf(path)
+        @zk.mkdir_p(path)
+      end
     end
   end
 end

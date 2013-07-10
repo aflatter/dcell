@@ -1,0 +1,2 @@
+module DCell::Registry
+end
